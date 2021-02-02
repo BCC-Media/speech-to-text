@@ -9,6 +9,9 @@ import (
 	"github.com/pulumi/pulumi-gcp/sdk/v4/go/gcp/projects"
 	"github.com/pulumi/pulumi-gcp/sdk/v4/go/gcp/serviceaccount"
 	"github.com/pulumi/pulumi-gcp/sdk/v4/go/gcp/storage"
+	"github.com/pulumi/pulumi-random/sdk/v3/go/random"
+
+	//	"github.com/pulumi/pulumi-random/sdk/v3/go/random"
 	"github.com/pulumi/pulumi/sdk/v2/go/pulumi"
 	"github.com/pulumi/pulumi/sdk/v2/go/pulumi/config"
 )
@@ -66,13 +69,24 @@ func main() {
 		bucketObjectArgs := &storage.BucketObjectArgs{
 			Bucket: codeBucket.Name,
 			Source: pulumi.NewFileArchive("../ingest-func"),
-			Name:   pulumi.StringPtr("ingest-func.zip"),
 		}
 
 		bucketObject, err := storage.NewBucketObject(ctx, "ingest", bucketObjectArgs)
 		if err != nil {
 			return err
 		}
+
+		codeFileName, err := random.NewRandomId(ctx, "randomZipName", &random.RandomIdArgs{
+			ByteLength: pulumi.Int(1),
+			Keepers: pulumi.Map{
+				"zipHash": bucketObject.Md5hash,
+			},
+		})
+		if err != nil {
+			return err
+		}
+
+		bucketObject.Name = codeFileName.Hex
 
 		// Set arguments for creating the function resource.
 		args := &cloudfunctions.FunctionArgs{
@@ -91,6 +105,7 @@ func main() {
 		// Create the function using the args.
 		ingestFunc, err := cloudfunctions.NewFunction(ctx, "ingest", args, pulumi.DependsOn(
 			[]pulumi.Resource{
+				bucketObject,
 				project,
 				cfAPI,
 			},
