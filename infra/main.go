@@ -15,6 +15,7 @@ import (
 
 var pulumiServiceAccount = os.Getenv("PULUMI_GOOGLE_ACCOUT")
 var billingAccountID = os.Getenv("BILLING_ACCOUNT_ID")
+var functionKey = os.Getenv("FUNCTION_KEY")
 
 func main() {
 	pulumi.Run(func(ctx *pulumi.Context) error {
@@ -44,13 +45,6 @@ func main() {
 			pulumi.DependsOn([]pulumi.Resource{project, iamAPI}),
 		)
 
-		if err != nil {
-			return err
-		}
-
-		mediaBankKey, err := serviceaccount.NewKey(ctx, "mediaBankKey", &serviceaccount.KeyArgs{
-			ServiceAccountId: mediaBankServiceAccount.AccountId,
-		}, pulumi.DependsOn([]pulumi.Resource{project}))
 		if err != nil {
 			return err
 		}
@@ -89,6 +83,9 @@ func main() {
 			TriggerHttp:         pulumi.Bool(true),
 			AvailableMemoryMb:   pulumi.Int(128),
 			Project:             pulumi.String(gcpProjectID),
+			EnvironmentVariables: pulumi.Map{
+				"FUNCTION_KEY": pulumi.String(functionKey),
+			},
 		}
 
 		// Create the function using the args.
@@ -98,6 +95,19 @@ func main() {
 				cfAPI,
 			},
 		))
+		if err != nil {
+			return err
+		}
+
+		// Allow anyone to invoke the function
+		_, err = cloudfunctions.NewFunctionIamMember(ctx, "invoker", &cloudfunctions.FunctionIamMemberArgs{
+			Project:       ingestFunc.Project,
+			Region:        ingestFunc.Region,
+			CloudFunction: ingestFunc.Name,
+			Role:          pulumi.String("roles/cloudfunctions.invoker"),
+			Member:        pulumi.String("allUsers"),
+		})
+
 		if err != nil {
 			return err
 		}
@@ -143,7 +153,6 @@ func main() {
 		ctx.Export("ingestBucket", ingestBucket.Url)
 		ctx.Export("outputBucket", outputBucket.Url)
 		ctx.Export("ingestTrigger", ingestFunc.HttpsTriggerUrl)
-		ctx.Export("mediabankKey", mediaBankKey.PrivateKey)
 		return nil
 	})
 }
