@@ -6,11 +6,16 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 
 	speech "cloud.google.com/go/speech/apiv1"
 	"cloud.google.com/go/storage"
 	speechpb "google.golang.org/genproto/googleapis/cloud/speech/v1"
+)
+
+var (
+	apiKey = os.Getenv("FUNCTION_KEY")
 )
 
 type CheckRequest struct {
@@ -96,6 +101,11 @@ func (r ingestRequest) Encoding() speechpb.RecognitionConfig_AudioEncoding {
 // Ingest starts the transcription process
 func Ingest(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+
+	if r.URL.Query().Get("key") != apiKey {
+		http.Error(w, "Wrong key", http.StatusUnauthorized)
+		return
+	}
 
 	client, err := speech.NewClient(ctx)
 	if err != nil {
