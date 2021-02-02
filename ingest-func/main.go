@@ -6,48 +6,12 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"time"
+	"strings"
 
 	speech "cloud.google.com/go/speech/apiv1"
 	"cloud.google.com/go/storage"
-	"github.com/davecgh/go-spew/spew"
 	speechpb "google.golang.org/genproto/googleapis/cloud/speech/v1"
 )
-
-// GCSEvent is the payload of a GCS event.
-type GCSEvent struct {
-	Kind                    string                 `json:"kind"`
-	ID                      string                 `json:"id"`
-	SelfLink                string                 `json:"selfLink"`
-	Name                    string                 `json:"name"`
-	Bucket                  string                 `json:"bucket"`
-	Generation              string                 `json:"generation"`
-	Metageneration          string                 `json:"metageneration"`
-	ContentType             string                 `json:"contentType"`
-	TimeCreated             time.Time              `json:"timeCreated"`
-	Updated                 time.Time              `json:"updated"`
-	TemporaryHold           bool                   `json:"temporaryHold"`
-	EventBasedHold          bool                   `json:"eventBasedHold"`
-	RetentionExpirationTime time.Time              `json:"retentionExpirationTime"`
-	StorageClass            string                 `json:"storageClass"`
-	TimeStorageClassUpdated time.Time              `json:"timeStorageClassUpdated"`
-	Size                    string                 `json:"size"`
-	MD5Hash                 string                 `json:"md5Hash"`
-	MediaLink               string                 `json:"mediaLink"`
-	ContentEncoding         string                 `json:"contentEncoding"`
-	ContentDisposition      string                 `json:"contentDisposition"`
-	CacheControl            string                 `json:"cacheControl"`
-	Metadata                map[string]interface{} `json:"metadata"`
-	CRC32C                  string                 `json:"crc32c"`
-	ComponentCount          int                    `json:"componentCount"`
-	Etag                    string                 `json:"etag"`
-	CustomerEncryption      struct {
-		EncryptionAlgorithm string `json:"encryptionAlgorithm"`
-		KeySha256           string `json:"keySha256"`
-	}
-	KMSKeyName    string `json:"kmsKeyName"`
-	ResourceState string `json:"resourceState"`
-}
 
 type CheckRequest struct {
 	RequestID  string `json:"id"`
@@ -108,62 +72,68 @@ func CheckSTT(w http.ResponseWriter, r *http.Request) {
 	writer.Write([]byte(transcript))
 	writer.Close()
 	w.Write([]byte(transcript))
-
-	/*
-		opLR := client.LROClient.ListOperations(ctx, &longrunning.ListOperationsRequest{})
-
-		i := 0
-		for {
-			fmt.Printf("%d", i)
-			i++
-
-			op, done := opLR.Next()
-			if done == iterator.Done {
-				break
-			}
-
-			opR := client.LongRunningRecognizeOperation(op.Name)
-			if !opR.Done() {
-				log.Println("Not done")
-				meta, err := opR.Metadata()
-				if err != nil {
-					continue
-				}
-
-				spew.Dump(meta)
-				continue
-			}
-
-			spew.Dump(opR.Wait(ctx))
-		}
-	*/
 }
 
-func SendSTT(ctx context.Context, e GCSEvent) error {
-	spew.Dump(e)
+type ingestRequest struct {
+	File            string `json:"file"`
+	Language        string `json:"lang"`
+	EncodingString  string `json:"encoding"`
+	SampleRateHertz int32  `json:"sample_rate"`
+}
+
+func (r ingestRequest) Encoding() speechpb.RecognitionConfig_AudioEncoding {
+	switch strings.ToUpper(r.EncodingString) {
+	case "PCM":
+		return speechpb.RecognitionConfig_LINEAR16
+	case "OPUS":
+		return speechpb.RecognitionConfig_OGG_OPUS
+	}
+
+	log.Printf("Unknown encoding: %s", r.EncodingString)
+	return speechpb.RecognitionConfig_ENCODING_UNSPECIFIED
+}
+
+// Ingest starts the transcription process
+func Ingest(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
 	client, err := speech.NewClient(ctx)
+	if err != nil {
+		http.Error(w, "Can't connect to speech API. See log for more details.", http.StatusBadRequest)
+		log.Panicf("Can't connect to speech API: %+v", err)
+		return
+	}
+
+	reqData := ingestRequest{}
+	if err := json.NewDecoder(r.Body).Decode(&reqData); err != nil {
+		http.Error(w, "Error parsing request", http.StatusBadRequest)
+		log.Panicf("json.NewDecoder: %v", err)
+		return
+	}
+
 	// Send the contents of the audio file with the encoding and
 	// and sample rate information to be transcripted.
 	req := &speechpb.LongRunningRecognizeRequest{
 		Config: &speechpb.RecognitionConfig{
 			Encoding:                   speechpb.RecognitionConfig_LINEAR16,
-			SampleRateHertz:            48000,
+			SampleRateHertz:            reqData.SampleRateHertz,
 			AudioChannelCount:          2,
-			LanguageCode:               "no-NO",
+			LanguageCode:               reqData.Language,
 			SpeechContexts:             []*speechpb.SpeechContext{},
 			EnableAutomaticPunctuation: true,
 			EnableWordTimeOffsets:      true,
 		},
 		Audio: &speechpb.RecognitionAudio{
-			AudioSource: &speechpb.RecognitionAudio_Uri{Uri: fmt.Sprintf("gs://%s/%s", e.Bucket, e.Name)},
+			AudioSource: &speechpb.RecognitionAudio_Uri{Uri: reqData.File},
 		},
 	}
 
 	op, err := client.LongRunningRecognize(ctx, req)
 	if err != nil {
-		return err
+		http.Error(w, "Error starting job", http.StatusInternalServerError)
+		log.Panicf("json.NewDecoder: %v", err)
+		return
 	}
 
-	spew.Print(op.Name())
-	return nil
+	log.Printf("Op id: %s", op.Name())
 }
