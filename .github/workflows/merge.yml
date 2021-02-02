@@ -20,4 +20,5 @@ jobs:
           GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS}}
           PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
           PULUMI_GOOGLE_ACCOUT: ${{ secrets.PULUMI_GOOGLE_ACCOUT }}
+          BILLING_ACCOUNT_ID: ${{ secrets.BILLING_ACCOUNT_ID }}
           PULUMI_ROOT: infra
