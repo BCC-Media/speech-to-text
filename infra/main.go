@@ -14,7 +14,7 @@ import (
 )
 
 var pulumiServiceAccount = os.Getenv("PULUMI_GOOGLE_ACCOUT")
-var billingAccountID = os.Getenv("BILLING_ACCOUTN_ID")
+var billingAccountID = os.Getenv("BILLING_ACCOUNT_ID")
 
 func main() {
 	pulumi.Run(func(ctx *pulumi.Context) error {
