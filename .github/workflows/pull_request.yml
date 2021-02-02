@@ -16,5 +16,6 @@ jobs:
         env:
           GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS}}
           PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
+          PULUMI_GOOGLE_ACCOUT: ${{ secrets.PULUMI_GOOGLE_ACCOUT }}
           IS_PR_WORKFLOW: true
           PULUMI_ROOT: infra
