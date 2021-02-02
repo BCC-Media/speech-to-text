@@ -6,17 +6,25 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 
 	speech "cloud.google.com/go/speech/apiv1"
 	"cloud.google.com/go/storage"
 	speechpb "google.golang.org/genproto/googleapis/cloud/speech/v1"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 var (
 	apiKey = os.Getenv("FUNCTION_KEY")
 )
+
+func sendError(w http.ResponseWriter, message string, status int) {
+	http.Error(w, message, status)
+	log.Print(message)
+}
 
 type CheckRequest struct {
 	RequestID  string `json:"id"`
@@ -79,14 +87,22 @@ func CheckSTT(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(transcript))
 }
 
-type ingestRequest struct {
+// IngestRequest captures the submitted data
+type IngestRequest struct {
 	File            string `json:"file"`
 	Language        string `json:"lang"`
 	EncodingString  string `json:"encoding"`
 	SampleRateHertz int32  `json:"sample_rate"`
 }
 
-func (r ingestRequest) Encoding() speechpb.RecognitionConfig_AudioEncoding {
+// FileStatus is the structure written into the storage to keep track of the status
+type FileStatus struct {
+	IngestRequest
+	JobID string `json:"job_id"`
+}
+
+// Encoding as the protobuf version
+func (r IngestRequest) Encoding() speechpb.RecognitionConfig_AudioEncoding {
 	switch strings.ToUpper(r.EncodingString) {
 	case "PCM":
 		return speechpb.RecognitionConfig_LINEAR16
@@ -103,21 +119,50 @@ func Ingest(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	if r.URL.Query().Get("key") != apiKey {
-		http.Error(w, "Wrong key", http.StatusUnauthorized)
+		sendError(w, "Wrong key", http.StatusUnauthorized)
 		return
 	}
 
 	client, err := speech.NewClient(ctx)
 	if err != nil {
-		http.Error(w, "Can't connect to speech API. See log for more details.", http.StatusBadRequest)
-		log.Panicf("Can't connect to speech API: %+v", err)
+		sendError(w, "Can't connect to speech API. See log for more details.", http.StatusBadRequest)
 		return
 	}
 
-	reqData := ingestRequest{}
+	reqData := IngestRequest{}
 	if err := json.NewDecoder(r.Body).Decode(&reqData); err != nil {
-		http.Error(w, "Error parsing request", http.StatusBadRequest)
-		log.Panicf("json.NewDecoder: %v", err)
+		sendError(w, "Error parsing request", http.StatusBadRequest)
+		return
+	}
+
+	storageClient, err := storage.NewClient(ctx)
+	if err != nil {
+		sendError(w, fmt.Sprintf("Unable to create a storage client: %+v", err), http.StatusInternalServerError)
+		return
+	}
+
+	fileURL, err := url.Parse(reqData.File)
+	if err != nil {
+		sendError(w, fmt.Sprintf("Unable to parse file url: %+v", err), http.StatusInternalServerError)
+		return
+	}
+
+	bucket := storageClient.Bucket(fileURL.Hostname())
+	statusFile := bucket.Object(fmt.Sprintf("%s.json", fileURL.Path))
+
+	_, err = statusFile.Attrs(ctx)
+	if err != storage.ErrObjectNotExist {
+		sendError(w, fmt.Sprintf("File is already in progress: %+v", err), http.StatusConflict)
+		return
+	}
+
+	fStatus := FileStatus{
+		IngestRequest: reqData,
+	}
+
+	err = json.NewEncoder(statusFile.NewWriter(ctx)).Encode(fStatus)
+	if err != storage.ErrObjectNotExist {
+		sendError(w, fmt.Sprintf("Unable to write status file: %+v", err), http.StatusConflict)
 		return
 	}
 
@@ -140,10 +185,26 @@ func Ingest(w http.ResponseWriter, r *http.Request) {
 
 	op, err := client.LongRunningRecognize(ctx, req)
 	if err != nil {
-		http.Error(w, "Error starting job", http.StatusInternalServerError)
-		log.Panicf("json.NewDecoder: %v", err)
+		errStatus, ok := status.FromError(err)
+		if !ok {
+			sendError(w, "Error starting job - Unknow error", http.StatusInternalServerError)
+		} else if errStatus.Code() == codes.NotFound {
+			sendError(w, fmt.Sprintf("Could not locate file \"%s\"", reqData.File), http.StatusNotFound)
+		} else if errStatus.Code() == codes.InvalidArgument {
+			sendError(w, fmt.Sprintf("Illegal argumet: \"%s\"", errStatus.Message()), http.StatusBadRequest)
+		} else {
+			sendError(w, "Error starting job", http.StatusInternalServerError)
+		}
+
+		_ = statusFile.Delete(ctx)
 		return
 	}
 
+	fStatus.JobID = op.Name()
+	err = json.NewEncoder(statusFile.NewWriter(ctx)).Encode(fStatus)
+	if err != storage.ErrObjectNotExist {
+		sendError(w, fmt.Sprintf("Unable to write status file: %+v", err), http.StatusConflict)
+		return
+	}
 	log.Printf("Op id: %s", op.Name())
 }
