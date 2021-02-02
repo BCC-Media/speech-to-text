@@ -1,0 +1,22 @@
+name: Pulumi
+on:
+  - pull_request
+
+jobs:
+  preview:
+    name: Preview
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          fetch-depth: 1
+      - uses: pulumi/actions@v1
+        with:
+          command: preview
+        env:
+          GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS}}
+          PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
+          PULUMI_GOOGLE_ACCOUT: ${{ secrets.PULUMI_GOOGLE_ACCOUT }}
+          BILLING_ACCOUNT_ID: ${{ secrets.BILLING_ACCOUNT_ID }}
+          IS_PR_WORKFLOW: true
+          PULUMI_ROOT: infra
