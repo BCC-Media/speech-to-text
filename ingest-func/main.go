@@ -101,7 +101,9 @@ func CheckSTT(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(transcript))
 }
 */
-// ProcessResults is called periodically
+
+// ProcessResults is called periodically to fetch teh finished transcriptions
+// Should it become a longer process, we can inwoke it 1x per file via PubSub
 func ProcessResults(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -116,12 +118,6 @@ func ProcessResults(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	reqData := IngestRequest{}
-	if err := json.NewDecoder(r.Body).Decode(&reqData); err != nil {
-		sendError(w, "Error parsing request", http.StatusBadRequest)
-		return
-	}
-
 	storageClient, err := storage.NewClient(ctx)
 	if err != nil {
 		sendError(w, fmt.Sprintf("Unable to create a storage client: %+v", err), http.StatusInternalServerError)
@@ -130,7 +126,7 @@ func ProcessResults(w http.ResponseWriter, r *http.Request) {
 
 	ingestBucket := storageClient.Bucket(ingestBucketID)
 	resultBucket := storageClient.Bucket(resultBucketID)
-	objs := ingestBucket.Objects(ctx, &storage.Query{Prefix: "/status/"})
+	objs := ingestBucket.Objects(ctx, &storage.Query{Prefix: "status/"})
 
 	for {
 		attrs, err := objs.Next()
