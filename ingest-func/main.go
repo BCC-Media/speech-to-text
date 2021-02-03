@@ -126,7 +126,7 @@ func ProcessResults(w http.ResponseWriter, r *http.Request) {
 
 	ingestBucket := storageClient.Bucket(ingestBucketID)
 	resultBucket := storageClient.Bucket(resultBucketID)
-	objs := ingestBucket.Objects(ctx, &storage.Query{Prefix: "status/"})
+	objs := ingestBucket.Objects(ctx, &storage.Query{Prefix: "/status/"})
 
 	for {
 		attrs, err := objs.Next()
@@ -144,14 +144,14 @@ func ProcessResults(w http.ResponseWriter, r *http.Request) {
 		statusFile := ingestBucket.Object(attrs.Name)
 		reader, err := statusFile.NewReader(ctx)
 		if err != nil {
-			sendError(w, err.Error(), http.StatusInternalServerError)
+			sendError(w, fmt.Sprintf("Can't open status file: %+v", err), http.StatusInternalServerError)
 			return
 		}
 
 		fileStatus := FileStatus{}
 		err = json.NewDecoder(reader).Decode(&fileStatus)
 		if err != nil {
-			sendError(w, err.Error(), http.StatusInternalServerError)
+			sendError(w, fmt.Sprintf("Can't decode json: %+v", err), http.StatusInternalServerError)
 			return
 		}
 
@@ -163,7 +163,7 @@ func ProcessResults(w http.ResponseWriter, r *http.Request) {
 		op := client.LongRunningRecognizeOperation(fileStatus.JobID)
 		resp, err := op.Poll(ctx)
 		if err != nil {
-			sendError(w, err.Error(), http.StatusInternalServerError)
+			sendError(w, fmt.Sprintf("Can't get op status: %+v", err), http.StatusInternalServerError)
 			return
 		}
 
