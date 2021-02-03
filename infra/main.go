@@ -24,7 +24,9 @@ func appendFunctionKey(s string) string {
 	if err != nil {
 		return s
 	}
-	parsed.Query().Add("key", functionKey)
+	q := parsed.Query()
+	q.Add("key", functionKey)
+	parsed.RawQuery = q.Encode()
 	return parsed.String()
 }
 
