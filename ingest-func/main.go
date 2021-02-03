@@ -150,6 +150,7 @@ func ProcessResults(w http.ResponseWriter, r *http.Request) {
 
 		if !op.Done() {
 			log.Printf("%s not done yet", fileStatus.JobID)
+			continue
 		}
 
 		transcript := ""
