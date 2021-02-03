@@ -2,9 +2,11 @@ package main
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 
 	"github.com/pulumi/pulumi-gcp/sdk/v4/go/gcp/cloudfunctions"
+	"github.com/pulumi/pulumi-gcp/sdk/v4/go/gcp/cloudscheduler"
 	"github.com/pulumi/pulumi-gcp/sdk/v4/go/gcp/organizations"
 	"github.com/pulumi/pulumi-gcp/sdk/v4/go/gcp/projects"
 	"github.com/pulumi/pulumi-gcp/sdk/v4/go/gcp/serviceaccount"
@@ -16,6 +18,15 @@ import (
 var pulumiServiceAccount = os.Getenv("PULUMI_GOOGLE_ACCOUT")
 var billingAccountID = os.Getenv("BILLING_ACCOUNT_ID")
 var functionKey = os.Getenv("FUNCTION_KEY")
+
+func appendFunctionKey(s string) string {
+	parsed, err := url.Parse(s)
+	if err != nil {
+		return s
+	}
+	parsed.Query().Add("key", functionKey)
+	return parsed.String()
+}
 
 func main() {
 	pulumi.Run(func(ctx *pulumi.Context) error {
@@ -188,6 +199,28 @@ func main() {
 			Bucket:       ingestBucket.Name,
 			RoleEntities: bucketPerms,
 		})
+
+		_, err = cloudscheduler.NewJob(ctx, "resultsJob", &cloudscheduler.JobArgs{
+			HttpTarget: &cloudscheduler.JobHttpTargetArgs{
+				HttpMethod: pulumi.String("GET"),
+				Uri:        resultFunc.HttpsTriggerUrl.ApplyString(appendFunctionKey),
+			},
+			AttemptDeadline: pulumi.String("320s"),
+			Description:     pulumi.String("Collect transcription results"),
+			RetryConfig: &cloudscheduler.JobRetryConfigArgs{
+				MaxDoublings:       pulumi.Int(2),
+				MaxRetryDuration:   pulumi.String("600s"),
+				MinBackoffDuration: pulumi.String("60s"),
+				RetryCount:         pulumi.Int(3),
+			},
+
+			Schedule: pulumi.String("*/15 * * * *"), // Every 15 minutes
+			TimeZone: pulumi.String("Europe/Oslo"),
+		})
+
+		if err != nil {
+			return err
+		}
 
 		// Export the DNS name of the bucket
 		ctx.Export("ingestBucket", ingestBucket.Url)
