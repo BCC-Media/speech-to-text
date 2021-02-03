@@ -161,10 +161,27 @@ func ProcessResults(w http.ResponseWriter, r *http.Request) {
 		// TODO: errors
 		file := resultBucket.Object(fmt.Sprintf("%s.txt", attrs.Name))
 		writer := file.NewWriter(ctx)
-		writer.Write([]byte(transcript))
-		writer.Close()
+		_, err = writer.Write([]byte(transcript))
+		if err != nil {
+			sendError(w, fmt.Sprintf("Error writing results: %+v", err), http.StatusInternalServerError)
+			fileStatus.Status = StatusError
+			fileStatus.Error = err.Error()
+			writeStatus(ctx, statusFile, fileStatus)
+			return
+		}
 
-		statusFile.Delete(ctx)
+		err = writer.Close()
+		if err != nil {
+			sendError(w, fmt.Sprintf("Error writing results: %+v", err), http.StatusInternalServerError)
+			fileStatus.Status = StatusError
+			fileStatus.Error = err.Error()
+			writeStatus(ctx, statusFile, fileStatus)
+			return
+		}
+
+		fileStatus.Status = StatusCompleted
+		fileStatus.TxtFile = file.ObjectName()
+		writeStatus(ctx, statusFile, fileStatus)
 	}
 
 }
