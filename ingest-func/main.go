@@ -26,6 +26,16 @@ func sendError(w http.ResponseWriter, message string, status int) {
 	log.Print(message)
 }
 
+func writeStatus(ctx context.Context, statusFile *storage.ObjectHandle, fStatus FileStatus) error {
+	writer := statusFile.NewWriter(ctx)
+	err := json.NewEncoder(writer).Encode(fStatus)
+	if err != nil {
+		return err
+	}
+
+	return writer.Close()
+}
+
 type CheckRequest struct {
 	RequestID  string `json:"id"`
 	OutputName string `json:"output"`
@@ -160,7 +170,7 @@ func Ingest(w http.ResponseWriter, r *http.Request) {
 		IngestRequest: reqData,
 	}
 
-	err = json.NewEncoder(statusFile.NewWriter(ctx)).Encode(fStatus)
+	err = writeStatus(ctx, statusFile, fStatus)
 	if err != nil {
 		sendError(w, fmt.Sprintf("Unable to write status file: %+v", err), http.StatusConflict)
 		return
@@ -170,7 +180,7 @@ func Ingest(w http.ResponseWriter, r *http.Request) {
 	// and sample rate information to be transcripted.
 	req := &speechpb.LongRunningRecognizeRequest{
 		Config: &speechpb.RecognitionConfig{
-			Encoding:                   speechpb.RecognitionConfig_LINEAR16,
+			Encoding:                   reqData.Encoding(),
 			SampleRateHertz:            reqData.SampleRateHertz,
 			AudioChannelCount:          2,
 			LanguageCode:               reqData.Language,
@@ -201,7 +211,8 @@ func Ingest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	fStatus.JobID = op.Name()
-	err = json.NewEncoder(statusFile.NewWriter(ctx)).Encode(fStatus)
+
+	err = writeStatus(ctx, statusFile, fStatus)
 	if err != nil {
 		sendError(w, fmt.Sprintf("Unable to write status file: %+v", err), http.StatusConflict)
 		return
