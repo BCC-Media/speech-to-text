@@ -12,13 +12,16 @@ import (
 
 	speech "cloud.google.com/go/speech/apiv1"
 	"cloud.google.com/go/storage"
+	"google.golang.org/api/iterator"
 	speechpb "google.golang.org/genproto/googleapis/cloud/speech/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
 var (
-	apiKey = os.Getenv("FUNCTION_KEY")
+	apiKey         = os.Getenv("FUNCTION_KEY")
+	ingestBucketID = os.Getenv("INGEST_BUCKET")
+	resultBucketID = os.Getenv("RESULT_BUCKET")
 )
 
 func sendError(w http.ResponseWriter, message string, status int) {
@@ -36,6 +39,7 @@ func writeStatus(ctx context.Context, statusFile *storage.ObjectHandle, fStatus 
 	return writer.Close()
 }
 
+/*
 type CheckRequest struct {
 	RequestID  string `json:"id"`
 	OutputName string `json:"output"`
@@ -95,6 +99,96 @@ func CheckSTT(w http.ResponseWriter, r *http.Request) {
 	writer.Write([]byte(transcript))
 	writer.Close()
 	w.Write([]byte(transcript))
+}
+*/
+// ProcessResults is called periodically
+func ProcessResults(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	if r.URL.Query().Get("key") != apiKey {
+		sendError(w, "Wrong key", http.StatusUnauthorized)
+		return
+	}
+
+	client, err := speech.NewClient(ctx)
+	if err != nil {
+		sendError(w, "Can't connect to speech API. See log for more details.", http.StatusBadRequest)
+		return
+	}
+
+	reqData := IngestRequest{}
+	if err := json.NewDecoder(r.Body).Decode(&reqData); err != nil {
+		sendError(w, "Error parsing request", http.StatusBadRequest)
+		return
+	}
+
+	storageClient, err := storage.NewClient(ctx)
+	if err != nil {
+		sendError(w, fmt.Sprintf("Unable to create a storage client: %+v", err), http.StatusInternalServerError)
+		return
+	}
+
+	ingestBucket := storageClient.Bucket(ingestBucketID)
+	resultBucket := storageClient.Bucket(resultBucketID)
+	objs := ingestBucket.Objects(ctx, &storage.Query{Prefix: "/status/"})
+
+	for {
+		attrs, err := objs.Next()
+
+		if err == iterator.Done {
+			break
+		}
+
+		if err != nil {
+			sendError(w, fmt.Sprintf("Bucket(%s).Objects(): %v", ingestBucketID, err), http.StatusInternalServerError)
+			return
+		}
+
+		log.Printf(attrs.Name)
+		statusFile := ingestBucket.Object(attrs.Name)
+		reader, err := statusFile.NewReader(ctx)
+		if err != nil {
+			sendError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		fileStatus := FileStatus{}
+		err = json.NewDecoder(reader).Decode(&fileStatus)
+		if err != nil {
+			sendError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		if fileStatus.JobID == "" {
+			// Not sent to transcription yet. Take it next time
+			continue
+		}
+
+		op := client.LongRunningRecognizeOperation(fileStatus.JobID)
+		resp, err := op.Poll(ctx)
+		if err != nil {
+			sendError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		if !op.Done() {
+			log.Printf("%s not done yet", fileStatus.JobID)
+		}
+
+		transcript := ""
+		for _, r := range resp.GetResults() {
+			transcript += r.Alternatives[0].Transcript
+		}
+
+		// TODO: errors
+		file := resultBucket.Object(fmt.Sprintf("%s.txt", attrs.Name))
+		writer := file.NewWriter(ctx)
+		writer.Write([]byte(transcript))
+		writer.Close()
+
+		statusFile.Delete(ctx)
+	}
+
 }
 
 // IngestRequest captures the submitted data
@@ -158,8 +252,7 @@ func Ingest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	bucket := storageClient.Bucket(fileURL.Hostname())
-	// The trim is required because in case of "/test.json" storage creates a folder called `/`
-	statusFile := bucket.Object(strings.TrimPrefix(fmt.Sprintf("%s.json", fileURL.Path), "/"))
+	statusFile := bucket.Object(fmt.Sprintf("status%s.json", fileURL.Path))
 
 	_, err = statusFile.Attrs(ctx)
 	if err != storage.ErrObjectNotExist {
