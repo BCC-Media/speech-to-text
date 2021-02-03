@@ -73,22 +73,44 @@ func main() {
 			return err
 		}
 
+		ingestBucket, err := storage.NewBucket(ctx, fmt.Sprintf("%s-ingest", gcpProjectID), &storage.BucketArgs{
+			Location:                 pulumi.String("EUROPE-WEST3"),
+			Project:                  pulumi.String(gcpProjectID),
+			UniformBucketLevelAccess: pulumi.BoolPtr(false),
+		}, pulumi.DependsOn([]pulumi.Resource{project}))
+		if err != nil {
+			return err
+		}
+
+		outputBucket, err := storage.NewBucket(ctx, fmt.Sprintf("%s-output", gcpProjectID), &storage.BucketArgs{
+			Location:                 pulumi.String("EUROPE-WEST3"),
+			Project:                  pulumi.String(gcpProjectID),
+			UniformBucketLevelAccess: pulumi.BoolPtr(false),
+		}, pulumi.DependsOn([]pulumi.Resource{project}))
+		if err != nil {
+			return err
+		}
+
+		functionEnv := pulumi.Map{
+			"FUNCTION_KEY":  pulumi.String(functionKey),
+			"INGEST_BUCKET": ingestBucket.Name,
+			"RESULT_BUCKET": outputBucket.Name,
+		}
+
 		// Set arguments for creating the function resource.
-		args := &cloudfunctions.FunctionArgs{
-			SourceArchiveBucket: codeBucket.Name,
-			Runtime:             pulumi.String("go113"),
-			SourceArchiveObject: bucketObject.Name,
-			EntryPoint:          pulumi.String("Ingest"),
-			TriggerHttp:         pulumi.Bool(true),
-			AvailableMemoryMb:   pulumi.Int(128),
-			Project:             pulumi.String(gcpProjectID),
-			EnvironmentVariables: pulumi.Map{
-				"FUNCTION_KEY": pulumi.String(functionKey),
-			},
+		argsIngestFunc := &cloudfunctions.FunctionArgs{
+			SourceArchiveBucket:  codeBucket.Name,
+			Runtime:              pulumi.String("go113"),
+			SourceArchiveObject:  bucketObject.Name,
+			EntryPoint:           pulumi.String("Ingest"),
+			TriggerHttp:          pulumi.Bool(true),
+			AvailableMemoryMb:    pulumi.Int(128),
+			Project:              pulumi.String(gcpProjectID),
+			EnvironmentVariables: functionEnv,
 		}
 
 		// Create the function using the args.
-		ingestFunc, err := cloudfunctions.NewFunction(ctx, "ingest", args, pulumi.DependsOn(
+		ingestFunc, err := cloudfunctions.NewFunction(ctx, "ingest", argsIngestFunc, pulumi.DependsOn(
 			[]pulumi.Resource{
 				bucketObject,
 				project,
@@ -112,21 +134,39 @@ func main() {
 			return err
 		}
 
-		// Create a GCP resource (Storage Bucket)
-		ingestBucket, err := storage.NewBucket(ctx, fmt.Sprintf("%s-ingest", gcpProjectID), &storage.BucketArgs{
-			Location:                 pulumi.String("EUROPE-WEST3"),
-			Project:                  pulumi.String(gcpProjectID),
-			UniformBucketLevelAccess: pulumi.BoolPtr(false),
-		}, pulumi.DependsOn([]pulumi.Resource{project}))
+		// Set arguments for creating the function resource.
+		argsResultFunc := &cloudfunctions.FunctionArgs{
+			SourceArchiveBucket:  codeBucket.Name,
+			Runtime:              pulumi.String("go113"),
+			SourceArchiveObject:  bucketObject.Name,
+			EntryPoint:           pulumi.String("ProcessResults"),
+			TriggerHttp:          pulumi.Bool(true),
+			AvailableMemoryMb:    pulumi.Int(128),
+			Project:              pulumi.String(gcpProjectID),
+			EnvironmentVariables: functionEnv,
+		}
+
+		// Create the function using the args.
+		resultFunc, err := cloudfunctions.NewFunction(ctx, "resultFunc", argsResultFunc, pulumi.DependsOn(
+			[]pulumi.Resource{
+				bucketObject,
+				project,
+				cfAPI,
+			},
+		))
 		if err != nil {
 			return err
 		}
 
-		outputBucket, err := storage.NewBucket(ctx, fmt.Sprintf("%s-output", gcpProjectID), &storage.BucketArgs{
-			Location:                 pulumi.String("EUROPE-WEST3"),
-			Project:                  pulumi.String(gcpProjectID),
-			UniformBucketLevelAccess: pulumi.BoolPtr(false),
-		}, pulumi.DependsOn([]pulumi.Resource{project}))
+		// Allow anyone to invoke the function
+		_, err = cloudfunctions.NewFunctionIamMember(ctx, "resultFuncInvoker", &cloudfunctions.FunctionIamMemberArgs{
+			Project:       resultFunc.Project,
+			Region:        resultFunc.Region,
+			CloudFunction: resultFunc.Name,
+			Role:          pulumi.String("roles/cloudfunctions.invoker"),
+			Member:        pulumi.String("allUsers"),
+		})
+
 		if err != nil {
 			return err
 		}
@@ -153,6 +193,7 @@ func main() {
 		ctx.Export("ingestBucket", ingestBucket.Url)
 		ctx.Export("outputBucket", outputBucket.Url)
 		ctx.Export("ingestTrigger", ingestFunc.HttpsTriggerUrl)
+		ctx.Export("resultTrigger", resultFunc.HttpsTriggerUrl)
 		return nil
 	})
 }
