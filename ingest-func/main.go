@@ -1,9 +1,10 @@
-package sst
+package stt
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"net/url"
@@ -126,13 +127,22 @@ func ProcessResults(w http.ResponseWriter, r *http.Request) {
 
 	ingestBucket := storageClient.Bucket(ingestBucketID)
 	resultBucket := storageClient.Bucket(resultBucketID)
-	objs := ingestBucket.Objects(ctx, &storage.Query{Prefix: "/status/"})
-
+	objs := ingestBucket.Objects(ctx, &storage.Query{Prefix: "status/"})
+	i := 0
 	for {
 		attrs, err := objs.Next()
 
 		if err == iterator.Done {
+			log.Printf("Done: %d", i)
 			break
+		}
+
+		i++
+		log.Printf("Processing: %d", i)
+
+		if !strings.HasSuffix(attrs.Name, ".json") {
+			// Ignore non json files
+			continue
 		}
 
 		if err != nil {
@@ -140,7 +150,7 @@ func ProcessResults(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		log.Printf(attrs.Name)
+		log.Printf("Name: %s", attrs.Name)
 		statusFile := ingestBucket.Object(attrs.Name)
 		reader, err := statusFile.NewReader(ctx)
 		if err != nil {
@@ -148,8 +158,16 @@ func ProcessResults(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		statusFileBytes, err := ioutil.ReadAll(reader)
+		if err != nil {
+			sendError(w, fmt.Sprintf("Can't read status file: %+v", err), http.StatusInternalServerError)
+			return
+		}
+
+		log.Printf("%s", statusFileBytes)
+
 		fileStatus := FileStatus{}
-		err = json.NewDecoder(reader).Decode(&fileStatus)
+		err = json.Unmarshal(statusFileBytes, &fileStatus)
 		if err != nil {
 			sendError(w, fmt.Sprintf("Can't decode json: %+v", err), http.StatusInternalServerError)
 			return
