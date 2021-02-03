@@ -161,7 +161,7 @@ func Ingest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	err = json.NewEncoder(statusFile.NewWriter(ctx)).Encode(fStatus)
-	if err != storage.ErrObjectNotExist {
+	if err != nil {
 		sendError(w, fmt.Sprintf("Unable to write status file: %+v", err), http.StatusConflict)
 		return
 	}
@@ -202,7 +202,7 @@ func Ingest(w http.ResponseWriter, r *http.Request) {
 
 	fStatus.JobID = op.Name()
 	err = json.NewEncoder(statusFile.NewWriter(ctx)).Encode(fStatus)
-	if err != storage.ErrObjectNotExist {
+	if err != nil {
 		sendError(w, fmt.Sprintf("Unable to write status file: %+v", err), http.StatusConflict)
 		return
 	}
