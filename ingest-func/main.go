@@ -25,6 +25,31 @@ var (
 	resultBucketID = os.Getenv("RESULT_BUCKET")
 )
 
+// Status constants
+const (
+	StatusProcessing = "processing"
+	StatusError      = "error"
+	StatusCompleted  = "completed"
+)
+
+// IngestRequest captures the submitted data
+type IngestRequest struct {
+	File            string `json:"file"`
+	Language        string `json:"lang"`
+	EncodingString  string `json:"encoding"`
+	SampleRateHertz int32  `json:"sample_rate"`
+}
+
+// FileStatus is the structure written into the storage to keep track of the status
+type FileStatus struct {
+	IngestRequest
+	JobID    string `json:"job_id"`
+	Status   string `json:"status"`
+	Error    string `json:"error"`
+	TxtFile  string `json:"txt_file"`
+	JSONFile string `json:"json_file"`
+}
+
 func sendError(w http.ResponseWriter, message string, status int) {
 	http.Error(w, message, status)
 	log.Print(message)
@@ -39,69 +64,6 @@ func writeStatus(ctx context.Context, statusFile *storage.ObjectHandle, fStatus 
 
 	return writer.Close()
 }
-
-/*
-type CheckRequest struct {
-	RequestID  string `json:"id"`
-	OutputName string `json:"output"`
-}
-
-func CheckSTT(w http.ResponseWriter, r *http.Request) {
-	ctx := context.Background()
-	client, err := speech.NewClient(ctx)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	p := CheckRequest{}
-	if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
-		log.Printf("json.NewDecoder: %v", err)
-		http.Error(w, "Error parsing request", http.StatusBadRequest)
-		return
-	}
-
-	op := client.LongRunningRecognizeOperation(p.RequestID)
-	resp, err := op.Poll(ctx)
-	if err != nil {
-		msg := fmt.Sprintf("Error getting resulst: %v", err)
-		fmt.Println(msg)
-		http.Error(w, msg, http.StatusBadRequest)
-		return
-	}
-
-	if !op.Done() {
-		msg := fmt.Sprintf("Operation %s is not done yet", op.Name())
-		log.Println(msg)
-		w.Write([]byte(msg))
-		return
-	}
-
-	resp, err = op.Wait(r.Context())
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	transcript := ""
-	for _, r := range resp.GetResults() {
-		transcript += r.Alternatives[0].Transcript
-	}
-
-	storageClient, err := storage.NewClient(ctx)
-	if err != nil {
-		msg := fmt.Sprintf("Err %v ", err)
-		log.Println(msg)
-		w.Write([]byte(msg))
-		return
-	}
-
-	bkt := storageClient.Bucket("transcribe-bcc-2-result")
-	file := bkt.Object(fmt.Sprintf("%s.txt", op.Name()))
-	writer := file.NewWriter(ctx)
-	writer.Write([]byte(transcript))
-	writer.Close()
-	w.Write([]byte(transcript))
-}
-*/
 
 // ProcessResults is called periodically to fetch teh finished transcriptions
 // Should it become a longer process, we can inwoke it 1x per file via PubSub
@@ -164,8 +126,6 @@ func ProcessResults(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		log.Printf("%s", statusFileBytes)
-
 		fileStatus := FileStatus{}
 		err = json.Unmarshal(statusFileBytes, &fileStatus)
 		if err != nil {
@@ -173,8 +133,8 @@ func ProcessResults(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if fileStatus.JobID == "" {
-			// Not sent to transcription yet. Take it next time
+		if fileStatus.JobID == "" || fileStatus.Status != StatusProcessing {
+			// Not sent to transcription yet or already handled. Take it next time
 			continue
 		}
 
@@ -182,6 +142,9 @@ func ProcessResults(w http.ResponseWriter, r *http.Request) {
 		resp, err := op.Poll(ctx)
 		if err != nil {
 			sendError(w, fmt.Sprintf("Can't get op status: %+v", err), http.StatusInternalServerError)
+			fileStatus.Status = StatusError
+			fileStatus.Error = err.Error()
+			writeStatus(ctx, statusFile, fileStatus)
 			return
 		}
 
@@ -203,20 +166,6 @@ func ProcessResults(w http.ResponseWriter, r *http.Request) {
 		statusFile.Delete(ctx)
 	}
 
-}
-
-// IngestRequest captures the submitted data
-type IngestRequest struct {
-	File            string `json:"file"`
-	Language        string `json:"lang"`
-	EncodingString  string `json:"encoding"`
-	SampleRateHertz int32  `json:"sample_rate"`
-}
-
-// FileStatus is the structure written into the storage to keep track of the status
-type FileStatus struct {
-	IngestRequest
-	JobID string `json:"job_id"`
 }
 
 // Encoding as the protobuf version
@@ -276,6 +225,7 @@ func Ingest(w http.ResponseWriter, r *http.Request) {
 
 	fStatus := FileStatus{
 		IngestRequest: reqData,
+		Status:        StatusProcessing,
 	}
 
 	err = writeStatus(ctx, statusFile, fStatus)
@@ -304,15 +254,21 @@ func Ingest(w http.ResponseWriter, r *http.Request) {
 	op, err := client.LongRunningRecognize(ctx, req)
 	if err != nil {
 		errStatus, ok := status.FromError(err)
+
+		errorText := fmt.Sprintf("Error starting job: %+v", err)
+		httpCode := http.StatusInternalServerError
+
 		if !ok {
-			sendError(w, "Error starting job - Unknow error", http.StatusInternalServerError)
+			errorText = fmt.Sprintf("Error starting job - Unknown error: %+v", err)
 		} else if errStatus.Code() == codes.NotFound {
-			sendError(w, fmt.Sprintf("Could not locate file \"%s\"", reqData.File), http.StatusNotFound)
+			errorText = fmt.Sprintf("Could not locate file \"%s\"", reqData.File)
+			httpCode = http.StatusNotFound
 		} else if errStatus.Code() == codes.InvalidArgument {
-			sendError(w, fmt.Sprintf("Illegal argumet: \"%s\"", errStatus.Message()), http.StatusBadRequest)
-		} else {
-			sendError(w, "Error starting job", http.StatusInternalServerError)
+			errorText = fmt.Sprintf("Illegal argumet: \"%s\"", errStatus.Message())
+			httpCode = http.StatusBadRequest
 		}
+
+		sendError(w, errorText, httpCode)
 
 		_ = statusFile.Delete(ctx)
 		return
