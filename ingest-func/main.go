@@ -158,7 +158,8 @@ func Ingest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	bucket := storageClient.Bucket(fileURL.Hostname())
-	statusFile := bucket.Object(fmt.Sprintf("%s.json", fileURL.Path))
+	// The trim is required because in case of "/test.json" storage creates a folder called `/`
+	statusFile := bucket.Object(strings.TrimPrefix(fmt.Sprintf("%s.json", fileURL.Path), "/"))
 
 	_, err = statusFile.Attrs(ctx)
 	if err != storage.ErrObjectNotExist {
