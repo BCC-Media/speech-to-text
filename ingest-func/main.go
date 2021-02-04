@@ -43,11 +43,12 @@ type IngestRequest struct {
 // FileStatus is the structure written into the storage to keep track of the status
 type FileStatus struct {
 	IngestRequest
-	JobID    string `json:"job_id"`
-	Status   string `json:"status"`
-	Error    string `json:"error"`
-	TxtFile  string `json:"txt_file"`
-	JSONFile string `json:"json_file"`
+	JobID      string `json:"job_id"`
+	Status     string `json:"status"`
+	Error      string `json:"error"`
+	SourceFile string `json:"source"`
+	TxtFile    string `json:"txt_file"`
+	JSONFile   string `json:"json_file"`
 }
 
 func sendError(w http.ResponseWriter, message string, status int) {
@@ -63,6 +64,21 @@ func writeStatus(ctx context.Context, statusFile *storage.ObjectHandle, fStatus 
 	}
 
 	return writer.Close()
+}
+
+func transcriptionToPlainText(trans []*speechpb.SpeechRecognitionResult, timestamps bool) string {
+	lines := ""
+	for _, r := range trans {
+		alt := r.Alternatives[0]
+
+		if timestamps {
+			lines += fmt.Sprintf("%s: ", alt.Words[0].StartTime.String())
+		}
+
+		lines += fmt.Sprintf("%s\n", alt.String())
+	}
+
+	return lines
 }
 
 // ProcessResults is called periodically to fetch teh finished transcriptions
@@ -153,15 +169,14 @@ func ProcessResults(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		transcript := ""
+		results := []*speechpb.SpeechRecognitionResult{}
 		for _, r := range resp.GetResults() {
-			transcript += r.Alternatives[0].Transcript
+			results = append(results, r)
 		}
 
-		// TODO: errors
-		file := resultBucket.Object(fmt.Sprintf("%s.txt", attrs.Name))
-		writer := file.NewWriter(ctx)
-		_, err = writer.Write([]byte(transcript))
+		txtFile := resultBucket.Object(fmt.Sprintf("%s.txt", fileStatus.SourceFile))
+		writer := txtFile.NewWriter(ctx)
+		_, err = writer.Write([]byte(transcriptionToPlainText(results, true)))
 		if err != nil {
 			sendError(w, fmt.Sprintf("Error writing results: %+v", err), http.StatusInternalServerError)
 			fileStatus.Status = StatusError
@@ -180,7 +195,7 @@ func ProcessResults(w http.ResponseWriter, r *http.Request) {
 		}
 
 		fileStatus.Status = StatusCompleted
-		fileStatus.TxtFile = file.ObjectName()
+		fileStatus.TxtFile = txtFile.ObjectName()
 		writeStatus(ctx, statusFile, fileStatus)
 	}
 
@@ -244,6 +259,7 @@ func Ingest(w http.ResponseWriter, r *http.Request) {
 	fStatus := FileStatus{
 		IngestRequest: reqData,
 		Status:        StatusProcessing,
+		SourceFile:    strings.TrimPrefix(fileURL.Path, "/"),
 	}
 
 	err = writeStatus(ctx, statusFile, fStatus)
