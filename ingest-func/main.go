@@ -80,7 +80,7 @@ func transcriptionToPlainText(trans []*speechpb.SpeechRecognitionResult, timesta
 			lines += fmt.Sprintf("%s: ", fmtDuration(alt.Words[0].StartTime.AsDuration()))
 		}
 
-		lines += fmt.Sprintf("%s\n", alt.String())
+		lines += fmt.Sprintf("%s\n", alt.Transcript)
 	}
 
 	return lines
