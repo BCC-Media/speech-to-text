@@ -20,6 +20,14 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+// CharsPerLine limits how many characters approximately we accept as one line
+// This is based on Netflix recommendation:
+// https://partnerhelp.netflixstudios.com/hc/en-us/articles/215274938-What-is-the-maximum-number-of-characters-per-line-allowed-in-Timed-Text-assets-
+const CharsPerLine = 42
+
+// DefaultFPS is used when no FPS info is provided.
+const DefaultFPS = 25
+
 var (
 	apiKey         = os.Getenv("FUNCTION_KEY")
 	ingestBucketID = os.Getenv("INGEST_BUCKET")
@@ -39,6 +47,7 @@ type IngestRequest struct {
 	Language        string `json:"lang"`
 	EncodingString  string `json:"encoding"`
 	SampleRateHertz int32  `json:"sample_rate"`
+	FPS             int32  `json:"fps"`
 }
 
 // FileStatus is the structure written into the storage to keep track of the status
@@ -67,22 +76,44 @@ func writeStatus(ctx context.Context, statusFile *storage.ObjectHandle, fStatus 
 	return writer.Close()
 }
 
-func fmtDuration(d time.Duration) string {
-	return fmt.Sprintf("%02.f:%02d:%02d", d.Hours(), int64(d.Minutes())%60, int64(d.Seconds())%60)
-}
-
-func transcriptionToPlainText(trans []*speechpb.SpeechRecognitionResult, timestamps bool) string {
-	lines := ""
-	for _, r := range trans {
-		alt := r.Alternatives[0]
-
-		if timestamps {
-			lines += fmt.Sprintf("%s: ", fmtDuration(alt.Words[0].StartTime.AsDuration()))
-		}
-
-		lines += fmt.Sprintf("%s\n", alt.Transcript)
+func durationToFrameNumber(d time.Duration, fps int32) int64 {
+	// Protect against div by 0
+	if fps == 0 || fps > 1001 {
+		log.Printf("Warning: FPS must be between 1 and 1000. Falling back to %d. Provided: %d", DefaultFPS, fps)
+		fps = DefaultFPS
 	}
 
+	milisPerFrame := 1000 / int64(fps)
+	return d.Milliseconds() / milisPerFrame
+}
+
+func fmtDuration(d time.Duration, fps int32) string {
+	return fmt.Sprintf("%02.f:%02d:%02d:%02d", d.Hours(), int64(d.Minutes())%60, int64(d.Seconds())%60, durationToFrameNumber(d, fps)/int64(fps))
+}
+
+func transcriptionToPlainText(trans []*speechpb.SpeechRecognitionResult, fps int32, timestamps bool) string {
+	lines := ""
+	line := ""
+	for _, r := range trans {
+		alt := r.Alternatives[0]
+		for _, w := range alt.Words {
+			if len(line) > CharsPerLine {
+				lines += line + "\n"
+
+				// Start a new line
+				if timestamps {
+					line = fmt.Sprintf("%s: ", fmtDuration(w.StartTime.AsDuration(), fps))
+				} else {
+					line = ""
+				}
+			}
+		}
+	}
+
+	// Append the last generated line if it was not empty
+	if line != "" {
+		lines += line + "\n"
+	}
 	return lines
 }
 
@@ -181,7 +212,7 @@ func ProcessResults(w http.ResponseWriter, r *http.Request) {
 
 		txtFile := resultBucket.Object(fmt.Sprintf("%s.txt", fileStatus.SourceFile))
 		writer := txtFile.NewWriter(ctx)
-		_, err = writer.Write([]byte(transcriptionToPlainText(results, true)))
+		_, err = writer.Write([]byte(transcriptionToPlainText(results, fileStatus.FPS, true)))
 		if err != nil {
 			sendError(w, fmt.Sprintf("Error writing results: %+v", err), http.StatusInternalServerError)
 			fileStatus.Status = StatusError
@@ -239,6 +270,10 @@ func Ingest(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&reqData); err != nil {
 		sendError(w, "Error parsing request", http.StatusBadRequest)
 		return
+	}
+
+	if reqData.FPS == 0 {
+		reqData.FPS = DefaultFPS
 	}
 
 	storageClient, err := storage.NewClient(ctx)
