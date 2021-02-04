@@ -89,7 +89,7 @@ func main() {
 
 		bucketLifecycle := storage.BucketLifecycleRuleArray{
 			&storage.BucketLifecycleRuleArgs{
-				Action:    storage.BucketLifecycleRuleActionArgs{Type: pulumi.String("delete")},
+				Action:    storage.BucketLifecycleRuleActionArgs{Type: pulumi.String("Delete")},
 				Condition: storage.BucketLifecycleRuleConditionArgs{Age: pulumi.Int(cleanBucketAfterDays)},
 			},
 		}
