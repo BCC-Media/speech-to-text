@@ -107,6 +107,8 @@ func transcriptionToPlainText(trans []*speechpb.SpeechRecognitionResult, fps int
 					line = ""
 				}
 			}
+
+			line += " " + w.Word
 		}
 	}
 
