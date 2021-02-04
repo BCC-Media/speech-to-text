@@ -197,6 +197,7 @@ func ProcessResults(w http.ResponseWriter, r *http.Request) {
 		fileStatus.Status = StatusCompleted
 		fileStatus.TxtFile = txtFile.ObjectName()
 		writeStatus(ctx, statusFile, fileStatus)
+		ingestBucket.Object(fileStatus.SourceFile).Delete(ctx)
 	}
 
 }
