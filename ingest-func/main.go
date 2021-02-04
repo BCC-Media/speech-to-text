@@ -99,6 +99,9 @@ func transcriptionToPlainText(trans []*speechpb.SpeechRecognitionResult, fps int
 	if timestamps {
 		// Compensate for the timestamp length
 		charsPerLine += len(fmtDuration(1, fps))
+
+		// Inject timestamp of the 1st word for the 1st line
+		line = fmt.Sprintf("%s:", fmtDuration(trans[0].Alternatives[0].Words[0].StartTime.AsDuration(), fps))
 	}
 
 	for _, r := range trans {
