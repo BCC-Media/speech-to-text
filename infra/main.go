@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-	"time"
 
 	"github.com/pulumi/pulumi-gcp/sdk/v4/go/gcp/cloudfunctions"
 	"github.com/pulumi/pulumi-gcp/sdk/v4/go/gcp/cloudscheduler"
@@ -19,7 +18,7 @@ import (
 var pulumiServiceAccount = os.Getenv("PULUMI_GOOGLE_ACCOUT")
 var billingAccountID = os.Getenv("BILLING_ACCOUNT_ID")
 var functionKey = os.Getenv("FUNCTION_KEY")
-var retentionPeriod = time.Duration(time.Hour * 24 * 7)
+var cleanBucketAfterDays = 7
 
 func appendFunctionKey(s string) string {
 	parsed, err := url.Parse(s)
@@ -88,11 +87,18 @@ func main() {
 			return err
 		}
 
+		bucketLifecycle := storage.BucketLifecycleRuleArray{
+			&storage.BucketLifecycleRuleArgs{
+				Action:    storage.BucketLifecycleRuleActionArgs{Type: pulumi.String("delete")},
+				Condition: storage.BucketLifecycleRuleConditionArgs{Age: pulumi.Int(cleanBucketAfterDays)},
+			},
+		}
+
 		ingestBucket, err := storage.NewBucket(ctx, fmt.Sprintf("%s-ingest", gcpProjectID), &storage.BucketArgs{
 			Location:                 pulumi.String("EUROPE-WEST3"),
 			Project:                  pulumi.String(gcpProjectID),
 			UniformBucketLevelAccess: pulumi.BoolPtr(false),
-			RetentionPolicy:          &storage.BucketRetentionPolicyArgs{RetentionPeriod: pulumi.Int(retentionPeriod.Seconds())},
+			LifecycleRules:           &bucketLifecycle,
 		}, pulumi.DependsOn([]pulumi.Resource{project}))
 		if err != nil {
 			return err
@@ -102,7 +108,7 @@ func main() {
 			Location:                 pulumi.String("EUROPE-WEST3"),
 			Project:                  pulumi.String(gcpProjectID),
 			UniformBucketLevelAccess: pulumi.BoolPtr(false),
-			RetentionPolicy:          &storage.BucketRetentionPolicyArgs{RetentionPeriod: pulumi.Int(retentionPeriod.Seconds())},
+			LifecycleRules:           &bucketLifecycle,
 		}, pulumi.DependsOn([]pulumi.Resource{project}))
 		if err != nil {
 			return err
