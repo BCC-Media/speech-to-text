@@ -40,6 +40,7 @@ func main() {
 		project, err := organizations.NewProject(ctx, gcpProjectID, &organizations.ProjectArgs{
 			BillingAccount: pulumi.StringPtr(billingAccountID),
 			ProjectId:      pulumi.String(gcpProjectID),
+			OrgId:          pulumi.String(googleCfg.Require("org")),
 		})
 		if err != nil {
 			return err
