@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"time"
 
 	speech "cloud.google.com/go/speech/apiv1"
 	"cloud.google.com/go/storage"
@@ -66,13 +67,17 @@ func writeStatus(ctx context.Context, statusFile *storage.ObjectHandle, fStatus 
 	return writer.Close()
 }
 
+func fmtDuration(d time.Duration) string {
+	return fmt.Sprintf("%02.f:%02d:%02d", d.Hours(), int64(d.Minutes())%60, int64(d.Seconds())%60)
+}
+
 func transcriptionToPlainText(trans []*speechpb.SpeechRecognitionResult, timestamps bool) string {
 	lines := ""
 	for _, r := range trans {
 		alt := r.Alternatives[0]
 
 		if timestamps {
-			lines += fmt.Sprintf("%s: ", alt.Words[0].StartTime.String())
+			lines += fmt.Sprintf("%s: ", fmtDuration(alt.Words[0].StartTime.AsDuration()))
 		}
 
 		lines += fmt.Sprintf("%s\n", alt.String())
