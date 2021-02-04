@@ -88,21 +88,28 @@ func durationToFrameNumber(d time.Duration, fps int32) int64 {
 }
 
 func fmtDuration(d time.Duration, fps int32) string {
-	return fmt.Sprintf("%02.f:%02d:%02d:%02d", d.Hours(), int64(d.Minutes())%60, int64(d.Seconds())%60, durationToFrameNumber(d, fps)/int64(fps))
+	return fmt.Sprintf("%02.f:%02d:%02d:%02d", d.Hours(), int64(d.Minutes())%60, int64(d.Seconds())%60, durationToFrameNumber(d, fps)%int64(fps))
 }
 
 func transcriptionToPlainText(trans []*speechpb.SpeechRecognitionResult, fps int32, timestamps bool) string {
 	lines := ""
 	line := ""
+
+	charsPerLine := CharsPerLine
+	if timestamps {
+		// Compensate for the timestamp length
+		charsPerLine += len(fmtDuration(1, fps))
+	}
+
 	for _, r := range trans {
 		alt := r.Alternatives[0]
 		for _, w := range alt.Words {
 			if len(line) > CharsPerLine {
-				lines += line + "\n"
+				lines += strings.TrimSpace(line) + "\n"
 
 				// Start a new line
 				if timestamps {
-					line = fmt.Sprintf("%s: ", fmtDuration(w.StartTime.AsDuration(), fps))
+					line = fmt.Sprintf("%s:", fmtDuration(w.StartTime.AsDuration(), fps))
 				} else {
 					line = ""
 				}
@@ -114,7 +121,7 @@ func transcriptionToPlainText(trans []*speechpb.SpeechRecognitionResult, fps int
 
 	// Append the last generated line if it was not empty
 	if line != "" {
-		lines += line + "\n"
+		lines += strings.TrimSpace(line) + "\n"
 	}
 	return lines
 }
