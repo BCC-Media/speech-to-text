@@ -112,7 +112,7 @@ func stringToSubItem(text string, start, end time.Duration) *astisub.Item {
 func transcriptionToSrt(trans []*speechpb.SpeechRecognitionResult) *astisub.Subtitles {
 	subs := astisub.NewSubtitles()
 	line := ""
-	var firstWord *speechpb.WordInfo
+	firstWord := trans[0].Alternatives[0].Words[0]
 	var lastWord *speechpb.WordInfo
 
 	for _, r := range trans {
@@ -207,6 +207,11 @@ func ProcessResults(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 
+		if err != nil {
+			log.Printf("Erorr reading file: %+v, %s", err, ingestBucketID)
+			continue
+		}
+
 		i++
 		log.Printf("Processing: %d", i)
 
@@ -290,6 +295,26 @@ func ProcessResults(w http.ResponseWriter, r *http.Request) {
 		writer = srtFile.NewWriter(ctx)
 		subs := transcriptionToSrt(results)
 		err = subs.WriteToSRT(writer)
+		if err != nil {
+			sendError(w, fmt.Sprintf("Error writing results: %+v", err), http.StatusInternalServerError)
+			fileStatus.Status = StatusError
+			fileStatus.Error = err.Error()
+			writeStatus(ctx, statusFile, fileStatus)
+			return
+		}
+
+		err = writer.Close()
+		if err != nil {
+			sendError(w, fmt.Sprintf("Error writing results: %+v", err), http.StatusInternalServerError)
+			fileStatus.Status = StatusError
+			fileStatus.Error = err.Error()
+			writeStatus(ctx, statusFile, fileStatus)
+			return
+		}
+
+		vttFile := resultBucket.Object(fmt.Sprintf("%s.vtt", fileStatus.SourceFile))
+		writer = vttFile.NewWriter(ctx)
+		err = subs.WriteToWebVTT(writer)
 		if err != nil {
 			sendError(w, fmt.Sprintf("Error writing results: %+v", err), http.StatusInternalServerError)
 			fileStatus.Status = StatusError
