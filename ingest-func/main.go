@@ -14,6 +14,7 @@ import (
 
 	speech "cloud.google.com/go/speech/apiv1"
 	"cloud.google.com/go/storage"
+	"github.com/asticode/go-astisub"
 	"google.golang.org/api/iterator"
 	speechpb "google.golang.org/genproto/googleapis/cloud/speech/v1"
 	"google.golang.org/grpc/codes"
@@ -89,6 +90,49 @@ func durationToFrameNumber(d time.Duration, fps int32) int64 {
 
 func fmtDuration(d time.Duration, fps int32) string {
 	return fmt.Sprintf("%02.f:%02d:%02d:%02d", d.Hours(), int64(d.Minutes())%60, int64(d.Seconds())%60, durationToFrameNumber(d, fps)%int64(fps))
+}
+
+func stringToSubItem(text string, start, end time.Duration) *astisub.Item {
+	return &astisub.Item{
+		StartAt: start,
+		EndAt:   end,
+		Lines: []astisub.Line{
+			{
+				Items: []astisub.LineItem{
+					{
+						Text: strings.TrimSpace(text),
+					},
+				},
+			},
+		},
+	}
+
+}
+
+func transcriptionToSrt(trans []*speechpb.SpeechRecognitionResult) *astisub.Subtitles {
+	subs := astisub.NewSubtitles()
+	line := ""
+	var firstWord *speechpb.WordInfo
+	var lastWord *speechpb.WordInfo
+
+	for _, r := range trans {
+		alt := r.Alternatives[0]
+		for _, w := range alt.Words {
+			if len(line) > CharsPerLine {
+				subs.Items = append(subs.Items, stringToSubItem(line, firstWord.StartTime.AsDuration(), lastWord.GetEndTime().AsDuration()))
+
+				// Start a new line
+				line = ""
+				firstWord = w
+			}
+
+			line += " " + w.Word
+			lastWord = w
+		}
+	}
+
+	subs.Items = append(subs.Items, stringToSubItem(line, firstWord.StartTime.AsDuration(), lastWord.GetEndTime().AsDuration()))
+	return subs
 }
 
 func transcriptionToPlainText(trans []*speechpb.SpeechRecognitionResult, fps int32, timestamps bool) string {
@@ -225,6 +269,27 @@ func ProcessResults(w http.ResponseWriter, r *http.Request) {
 		txtFile := resultBucket.Object(fmt.Sprintf("%s.txt", fileStatus.SourceFile))
 		writer := txtFile.NewWriter(ctx)
 		_, err = writer.Write([]byte(transcriptionToPlainText(results, fileStatus.FPS, true)))
+		if err != nil {
+			sendError(w, fmt.Sprintf("Error writing results: %+v", err), http.StatusInternalServerError)
+			fileStatus.Status = StatusError
+			fileStatus.Error = err.Error()
+			writeStatus(ctx, statusFile, fileStatus)
+			return
+		}
+
+		err = writer.Close()
+		if err != nil {
+			sendError(w, fmt.Sprintf("Error writing results: %+v", err), http.StatusInternalServerError)
+			fileStatus.Status = StatusError
+			fileStatus.Error = err.Error()
+			writeStatus(ctx, statusFile, fileStatus)
+			return
+		}
+
+		srtFile := resultBucket.Object(fmt.Sprintf("%s.srt", fileStatus.SourceFile))
+		writer = srtFile.NewWriter(ctx)
+		subs := transcriptionToSrt(results)
+		err = subs.WriteToSRT(writer)
 		if err != nil {
 			sendError(w, fmt.Sprintf("Error writing results: %+v", err), http.StatusInternalServerError)
 			fileStatus.Status = StatusError
