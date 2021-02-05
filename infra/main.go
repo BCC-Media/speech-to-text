@@ -209,7 +209,7 @@ func main() {
 		})
 
 		_, err = storage.NewBucketACL(ctx, "output_store_acl", &storage.BucketACLArgs{
-			Bucket:       ingestBucket.Name,
+			Bucket:       outputBucket.Name,
 			RoleEntities: bucketPerms,
 		})
 
