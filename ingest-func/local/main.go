@@ -2,8 +2,9 @@ package main
 
 import (
 	"fmt"
-	"go.bcc.media/stt"
 	"net/http"
+
+	"go.bcc.media/stt"
 )
 
 var fs = map[string]http.HandlerFunc{}
@@ -17,7 +18,6 @@ func index(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-
 	// Add your function here
 	fs["Ingest"] = stt.Ingest
 	fs["Restult"] = stt.ProcessResults

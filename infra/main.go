@@ -199,6 +199,8 @@ func main() {
 			pulumi.Sprintf("OWNER:user-%s", pulumiServiceAccount),
 			pulumi.Sprintf("READER:user-%s@appspot.gserviceaccount.com", project.ProjectId),
 			pulumi.Sprintf("WRITER:user-%s@appspot.gserviceaccount.com", project.ProjectId),
+			pulumi.Sprintf("READER:user-%s@appspot.gserviceaccount.com", project.ProjectId),
+			pulumi.Sprintf("WRITER:user-%s@appspot.gserviceaccount.com", project.ProjectId),
 			pulumi.Sprintf("READER:user-%s", mediaBankServiceAccount.Email),
 			pulumi.Sprintf("WRITER:user-%s", mediaBankServiceAccount.Email),
 		}
