@@ -347,6 +347,8 @@ func (r IngestRequest) Encoding() speechpb.RecognitionConfig_AudioEncoding {
 		return speechpb.RecognitionConfig_LINEAR16
 	case "OPUS":
 		return speechpb.RecognitionConfig_OGG_OPUS
+	case "FLAC":
+		return speechpb.RecognitionConfig_FLAC
 	}
 
 	log.Printf("Unknown encoding: %s", r.EncodingString)
