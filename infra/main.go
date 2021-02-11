@@ -210,9 +210,28 @@ func main() {
 			RoleEntities: bucketPerms,
 		})
 
+		if err != nil {
+			return err
+		}
+
 		_, err = storage.NewBucketACL(ctx, "output_store_acl", &storage.BucketACLArgs{
 			Bucket:       outputBucket.Name,
 			RoleEntities: bucketPerms,
+		})
+
+		if err != nil {
+			return err
+		}
+
+		codeBucketPerms := pulumi.StringArray{
+			pulumi.Sprintf("OWNER:user-%s", pulumiServiceAccount),
+			pulumi.Sprintf("READER:user-%s@appspot.gserviceaccount.com", project.ProjectId),
+			pulumi.Sprintf("WRITER:user-%s@appspot.gserviceaccount.com", project.ProjectId),
+		}
+
+		_, err = storage.NewBucketACL(ctx, "code_store_acl", &storage.BucketACLArgs{
+			Bucket:       codeBucket.Name,
+			RoleEntities: codeBucketPerms,
 		})
 
 		_, err = cloudscheduler.NewJob(ctx, "resultsJob", &cloudscheduler.JobArgs{
