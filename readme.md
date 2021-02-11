@@ -1,3 +1,5 @@
+![BCC.Media logo](https://storage.googleapis.com/bcc-media-public/bcc-media-logo-150.png)
+
 # Speech To Text
 
 This is a simple set of two functions that submit an audio file for transcription
