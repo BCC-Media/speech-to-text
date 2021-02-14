@@ -111,6 +111,11 @@ func stringToSubItem(text string, start, end time.Duration) *astisub.Item {
 
 func transcriptionToSrt(trans []*speechpb.SpeechRecognitionResult) *astisub.Subtitles {
 	subs := astisub.NewSubtitles()
+
+	if len(trans) == 0 {
+		return subs
+	}
+
 	line := ""
 	firstWord := trans[0].Alternatives[0].Words[0]
 	var lastWord *speechpb.WordInfo
@@ -136,6 +141,10 @@ func transcriptionToSrt(trans []*speechpb.SpeechRecognitionResult) *astisub.Subt
 }
 
 func transcriptionToPlainText(trans []*speechpb.SpeechRecognitionResult, fps int32, timestamps bool) string {
+	if len(trans) == 0 {
+		return ""
+	}
+
 	lines := ""
 	line := ""
 
