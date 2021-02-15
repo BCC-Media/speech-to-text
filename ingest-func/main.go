@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	speech "cloud.google.com/go/speech/apiv1"
@@ -207,146 +208,150 @@ func ProcessResults(w http.ResponseWriter, r *http.Request) {
 	ingestBucket := storageClient.Bucket(ingestBucketID)
 	resultBucket := storageClient.Bucket(resultBucketID)
 	objs := ingestBucket.Objects(ctx, &storage.Query{Prefix: "status/"})
-	i := 0
+
+	var wg sync.WaitGroup
 	for {
 		attrs, err := objs.Next()
-
 		if err == iterator.Done {
-			log.Printf("Done: %d", i)
 			break
 		}
 
 		if err != nil {
-			log.Printf("Erorr reading file: %+v, %s", err, ingestBucketID)
+			log.Printf("Can't read file: %+v", err)
 			continue
 		}
 
-		i++
-		log.Printf("Processing: %d", i)
+		wg.Add(1)
+		go resultWorker(ctx, &wg, client, ingestBucket, resultBucket, attrs)
+	}
 
-		if !strings.HasSuffix(attrs.Name, ".json") {
-			// Ignore non json files
-			continue
-		}
+}
 
+func resultWorker(ctx context.Context, wg *sync.WaitGroup, client *speech.Client, ingestBucket, resultBucket *storage.BucketHandle, attrs *storage.ObjectAttrs) {
+	log.Printf("Processing: %s", attrs.Name)
+	defer wg.Done()
+
+	if !strings.HasSuffix(attrs.Name, ".json") {
+		// Ignore non json files
+		return
+	}
+	/*
 		if err != nil {
 			sendError(w, fmt.Sprintf("Bucket(%s).Objects(): %v", ingestBucketID, err), http.StatusInternalServerError)
 			return
 		}
+	*/
 
-		log.Printf("Name: %s", attrs.Name)
-		statusFile := ingestBucket.Object(attrs.Name)
-		reader, err := statusFile.NewReader(ctx)
-		if err != nil {
-			sendError(w, fmt.Sprintf("Can't open status file: %+v", err), http.StatusInternalServerError)
-			return
-		}
-
-		statusFileBytes, err := ioutil.ReadAll(reader)
-		if err != nil {
-			sendError(w, fmt.Sprintf("Can't read status file: %+v", err), http.StatusInternalServerError)
-			return
-		}
-
-		fileStatus := FileStatus{}
-		err = json.Unmarshal(statusFileBytes, &fileStatus)
-		if err != nil {
-			sendError(w, fmt.Sprintf("Can't decode json: %+v", err), http.StatusInternalServerError)
-			return
-		}
-
-		if fileStatus.JobID == "" || fileStatus.Status != StatusProcessing {
-			// Not sent to transcription yet or already handled. Take it next time
-			continue
-		}
-
-		op := client.LongRunningRecognizeOperation(fileStatus.JobID)
-		resp, err := op.Poll(ctx)
-		if err != nil {
-			sendError(w, fmt.Sprintf("Can't get op status: %+v", err), http.StatusInternalServerError)
-			fileStatus.Status = StatusError
-			fileStatus.Error = err.Error()
-			writeStatus(ctx, statusFile, fileStatus)
-			return
-		}
-
-		if !op.Done() {
-			log.Printf("%s not done yet", fileStatus.JobID)
-			continue
-		}
-
-		results := []*speechpb.SpeechRecognitionResult{}
-		for _, r := range resp.GetResults() {
-			results = append(results, r)
-		}
-
-		txtFile := resultBucket.Object(fmt.Sprintf("%s.txt", fileStatus.SourceFile))
-		writer := txtFile.NewWriter(ctx)
-		_, err = writer.Write([]byte(transcriptionToPlainText(results, fileStatus.FPS, true)))
-		if err != nil {
-			sendError(w, fmt.Sprintf("Error writing results: %+v", err), http.StatusInternalServerError)
-			fileStatus.Status = StatusError
-			fileStatus.Error = err.Error()
-			writeStatus(ctx, statusFile, fileStatus)
-			return
-		}
-
-		err = writer.Close()
-		if err != nil {
-			sendError(w, fmt.Sprintf("Error writing results: %+v", err), http.StatusInternalServerError)
-			fileStatus.Status = StatusError
-			fileStatus.Error = err.Error()
-			writeStatus(ctx, statusFile, fileStatus)
-			return
-		}
-
-		srtFile := resultBucket.Object(fmt.Sprintf("%s.srt", fileStatus.SourceFile))
-		writer = srtFile.NewWriter(ctx)
-		subs := transcriptionToSrt(results)
-		err = subs.WriteToSRT(writer)
-		if err != nil {
-			sendError(w, fmt.Sprintf("Error writing results: %+v", err), http.StatusInternalServerError)
-			fileStatus.Status = StatusError
-			fileStatus.Error = err.Error()
-			writeStatus(ctx, statusFile, fileStatus)
-			return
-		}
-
-		err = writer.Close()
-		if err != nil {
-			sendError(w, fmt.Sprintf("Error writing results: %+v", err), http.StatusInternalServerError)
-			fileStatus.Status = StatusError
-			fileStatus.Error = err.Error()
-			writeStatus(ctx, statusFile, fileStatus)
-			return
-		}
-
-		vttFile := resultBucket.Object(fmt.Sprintf("%s.vtt", fileStatus.SourceFile))
-		writer = vttFile.NewWriter(ctx)
-		err = subs.WriteToWebVTT(writer)
-		if err != nil {
-			sendError(w, fmt.Sprintf("Error writing results: %+v", err), http.StatusInternalServerError)
-			fileStatus.Status = StatusError
-			fileStatus.Error = err.Error()
-			writeStatus(ctx, statusFile, fileStatus)
-			return
-		}
-
-		err = writer.Close()
-		if err != nil {
-			sendError(w, fmt.Sprintf("Error writing results: %+v", err), http.StatusInternalServerError)
-			fileStatus.Status = StatusError
-			fileStatus.Error = err.Error()
-			writeStatus(ctx, statusFile, fileStatus)
-			return
-		}
-
-		fileStatus.Status = StatusCompleted
-		fileStatus.TxtFile = txtFile.ObjectName()
-		writeStatus(ctx, statusFile, fileStatus)
-		ingestBucket.Object(fileStatus.SourceFile).Delete(ctx)
+	statusFile := ingestBucket.Object(attrs.Name)
+	reader, err := statusFile.NewReader(ctx)
+	if err != nil {
+		log.Printf("Can't open status file: %+v", err)
+		return
 	}
 
+	statusFileBytes, err := ioutil.ReadAll(reader)
+	if err != nil {
+		log.Printf("Can't read status file: %+v", err)
+		return
+	}
+
+	fileStatus := FileStatus{}
+	err = json.Unmarshal(statusFileBytes, &fileStatus)
+	if err != nil {
+		log.Printf("Can't decode json: %+v", err)
+		return
+	}
+
+	if fileStatus.JobID == "" || fileStatus.Status != StatusProcessing {
+		// Not sent to transcription yet or already handled. Take it next time
+		return
+	}
+
+	op := client.LongRunningRecognizeOperation(fileStatus.JobID)
+	resp, err := op.Poll(ctx)
+	if err != nil {
+		log.Printf("Can't get op status: %+v", err)
+		fileStatus.Status = StatusError
+		fileStatus.Error = err.Error()
+		writeStatus(ctx, statusFile, fileStatus)
+		return
+	}
+
+	if !op.Done() {
+		log.Printf("%s not done yet", fileStatus.JobID)
+		return
+	}
+
+	results := []*speechpb.SpeechRecognitionResult{}
+	for _, r := range resp.GetResults() {
+		results = append(results, r)
+	}
+
+	txtFile := resultBucket.Object(fmt.Sprintf("%s.txt", fileStatus.SourceFile))
+	writer := txtFile.NewWriter(ctx)
+	_, err = writer.Write([]byte(transcriptionToPlainText(results, fileStatus.FPS, true)))
+	if err != nil {
+		log.Printf("Error writing results: %+v", err)
+		fileStatus.Status = StatusError
+		fileStatus.Error = err.Error()
+		writeStatus(ctx, statusFile, fileStatus)
+		return
+	}
+
+	err = writer.Close()
+	if err != nil {
+		log.Printf("Error closing writer: %+v", err)
+		fileStatus.Status = StatusError
+		fileStatus.Error = err.Error()
+		writeStatus(ctx, statusFile, fileStatus)
+		return
+	}
+
+	srtFile := resultBucket.Object(fmt.Sprintf("%s.srt", fileStatus.SourceFile))
+	writer = srtFile.NewWriter(ctx)
+	subs := transcriptionToSrt(results)
+	err = subs.WriteToSRT(writer)
+	if err != nil {
+		log.Printf("Error writing SRT: %+v", err)
+		fileStatus.Status = StatusError
+		fileStatus.Error = err.Error()
+		writeStatus(ctx, statusFile, fileStatus)
+		return
+	}
+
+	err = writer.Close()
+	if err != nil {
+		log.Printf("Error closing SRT: %+v", err)
+		fileStatus.Status = StatusError
+		fileStatus.Error = err.Error()
+		writeStatus(ctx, statusFile, fileStatus)
+		return
+	}
+
+	vttFile := resultBucket.Object(fmt.Sprintf("%s.vtt", fileStatus.SourceFile))
+	writer = vttFile.NewWriter(ctx)
+	err = subs.WriteToWebVTT(writer)
+	if err != nil {
+		log.Printf("Error writing VTT: %+v", err)
+		fileStatus.Status = StatusError
+		fileStatus.Error = err.Error()
+		writeStatus(ctx, statusFile, fileStatus)
+		return
+	}
+
+	err = writer.Close()
+	if err != nil {
+		log.Printf("Error closing VTT: %+v", err)
+		fileStatus.Status = StatusError
+		fileStatus.Error = err.Error()
+		writeStatus(ctx, statusFile, fileStatus)
+		return
+	}
+
+	fileStatus.Status = StatusCompleted
+	fileStatus.TxtFile = txtFile.ObjectName()
+	writeStatus(ctx, statusFile, fileStatus)
+	ingestBucket.Object(fileStatus.SourceFile).Delete(ctx)
 }
 
 // Encoding as the protobuf version
