@@ -312,7 +312,10 @@ func resultWorker(ctx context.Context, wg *sync.WaitGroup, client *speech.Client
 	writer = srtFile.NewWriter(ctx)
 	subs := transcriptionToSrt(results)
 	err = subs.WriteToSRT(writer)
-	if err != nil {
+	if err == astisub.ErrNoSubtitlesToWrite {
+		// Write empty file
+		writer.Write([]byte{})
+	} else if err != nil {
 		log.Printf("Error writing SRT: %+v", err)
 		fileStatus.Status = StatusError
 		fileStatus.Error = err.Error()
@@ -332,7 +335,10 @@ func resultWorker(ctx context.Context, wg *sync.WaitGroup, client *speech.Client
 	vttFile := resultBucket.Object(fmt.Sprintf("%s.vtt", fileStatus.SourceFile))
 	writer = vttFile.NewWriter(ctx)
 	err = subs.WriteToWebVTT(writer)
-	if err != nil {
+	if err == astisub.ErrNoSubtitlesToWrite {
+		// Write empty file
+		writer.Write([]byte{})
+	} else if err != nil {
 		log.Printf("Error writing VTT: %+v", err)
 		fileStatus.Status = StatusError
 		fileStatus.Error = err.Error()
