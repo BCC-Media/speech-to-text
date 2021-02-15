@@ -27,6 +27,9 @@ import (
 // https://partnerhelp.netflixstudios.com/hc/en-us/articles/215274938-What-is-the-maximum-number-of-characters-per-line-allowed-in-Timed-Text-assets-
 const CharsPerLine = 42
 
+// CharsPerLineText limits the characters per line in the text format
+const CharsPerLineText = 100
+
 // DefaultFPS is used when no FPS info is provided.
 const DefaultFPS = 25
 
@@ -149,7 +152,7 @@ func transcriptionToPlainText(trans []*speechpb.SpeechRecognitionResult, fps int
 	lines := ""
 	line := ""
 
-	charsPerLine := CharsPerLine
+	charsPerLine := CharsPerLineText
 	if timestamps {
 		// Compensate for the timestamp length
 		charsPerLine += len(fmtDuration(1, fps))
@@ -161,7 +164,7 @@ func transcriptionToPlainText(trans []*speechpb.SpeechRecognitionResult, fps int
 	for _, r := range trans {
 		alt := r.Alternatives[0]
 		for _, w := range alt.Words {
-			if len(line) > CharsPerLine {
+			if len(line) > charsPerLine {
 				lines += strings.TrimSpace(line) + "\n"
 
 				// Start a new line
