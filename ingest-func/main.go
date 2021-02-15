@@ -225,6 +225,7 @@ func ProcessResults(w http.ResponseWriter, r *http.Request) {
 		go resultWorker(ctx, &wg, client, ingestBucket, resultBucket, attrs)
 	}
 
+	wg.Wait()
 }
 
 func resultWorker(ctx context.Context, wg *sync.WaitGroup, client *speech.Client, ingestBucket, resultBucket *storage.BucketHandle, attrs *storage.ObjectAttrs) {
