@@ -231,6 +231,25 @@ func ProcessResults(w http.ResponseWriter, r *http.Request) {
 	wg.Wait()
 }
 
+func renameStatus(ctx context.Context, ingestBucket *storage.BucketHandle, src *storage.ObjectHandle, suffix string) error {
+	if suffix == "" {
+		// NOOP
+		return nil
+	}
+
+	dst := ingestBucket.Object(fmt.Sprintf("%s.%s", src.ObjectName(), suffix))
+
+	if _, err := dst.CopierFrom(src).Run(ctx); err != nil {
+		return err
+	}
+
+	if err := src.Delete(ctx); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func resultWorker(ctx context.Context, wg *sync.WaitGroup, client *speech.Client, ingestBucket, resultBucket *storage.BucketHandle, attrs *storage.ObjectAttrs) {
 	log.Printf("Processing: %s", attrs.Name)
 	defer wg.Done()
@@ -278,6 +297,7 @@ func resultWorker(ctx context.Context, wg *sync.WaitGroup, client *speech.Client
 		fileStatus.Status = StatusError
 		fileStatus.Error = err.Error()
 		writeStatus(ctx, statusFile, fileStatus)
+		renameStatus(ctx, ingestBucket, statusFile, "error")
 		return
 	}
 
@@ -299,6 +319,7 @@ func resultWorker(ctx context.Context, wg *sync.WaitGroup, client *speech.Client
 		fileStatus.Status = StatusError
 		fileStatus.Error = err.Error()
 		writeStatus(ctx, statusFile, fileStatus)
+		renameStatus(ctx, ingestBucket, statusFile, "error")
 		return
 	}
 
@@ -308,6 +329,7 @@ func resultWorker(ctx context.Context, wg *sync.WaitGroup, client *speech.Client
 		fileStatus.Status = StatusError
 		fileStatus.Error = err.Error()
 		writeStatus(ctx, statusFile, fileStatus)
+		renameStatus(ctx, ingestBucket, statusFile, "error")
 		return
 	}
 
@@ -323,6 +345,7 @@ func resultWorker(ctx context.Context, wg *sync.WaitGroup, client *speech.Client
 		fileStatus.Status = StatusError
 		fileStatus.Error = err.Error()
 		writeStatus(ctx, statusFile, fileStatus)
+		renameStatus(ctx, ingestBucket, statusFile, "error")
 		return
 	}
 
@@ -332,6 +355,7 @@ func resultWorker(ctx context.Context, wg *sync.WaitGroup, client *speech.Client
 		fileStatus.Status = StatusError
 		fileStatus.Error = err.Error()
 		writeStatus(ctx, statusFile, fileStatus)
+		renameStatus(ctx, ingestBucket, statusFile, "error")
 		return
 	}
 
@@ -346,6 +370,7 @@ func resultWorker(ctx context.Context, wg *sync.WaitGroup, client *speech.Client
 		fileStatus.Status = StatusError
 		fileStatus.Error = err.Error()
 		writeStatus(ctx, statusFile, fileStatus)
+		renameStatus(ctx, ingestBucket, statusFile, "error")
 		return
 	}
 
@@ -355,6 +380,7 @@ func resultWorker(ctx context.Context, wg *sync.WaitGroup, client *speech.Client
 		fileStatus.Status = StatusError
 		fileStatus.Error = err.Error()
 		writeStatus(ctx, statusFile, fileStatus)
+		renameStatus(ctx, ingestBucket, statusFile, "error")
 		return
 	}
 
@@ -362,6 +388,7 @@ func resultWorker(ctx context.Context, wg *sync.WaitGroup, client *speech.Client
 	fileStatus.TxtFile = txtFile.ObjectName()
 	writeStatus(ctx, statusFile, fileStatus)
 	ingestBucket.Object(fileStatus.SourceFile).Delete(ctx)
+	renameStatus(ctx, ingestBucket, statusFile, "done")
 }
 
 // Encoding as the protobuf version
