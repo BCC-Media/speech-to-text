@@ -297,7 +297,7 @@ func resultWorker(ctx context.Context, wg *sync.WaitGroup, client *speech.Client
 		fileStatus.Status = StatusError
 		fileStatus.Error = err.Error()
 		writeStatus(ctx, statusFile, fileStatus)
-		renameStatus(ctx, ingestBucket, statusFile, "error")
+		renameStatus(ctx, ingestBucket, statusFile, "done")
 		return
 	}
 
@@ -319,7 +319,7 @@ func resultWorker(ctx context.Context, wg *sync.WaitGroup, client *speech.Client
 		fileStatus.Status = StatusError
 		fileStatus.Error = err.Error()
 		writeStatus(ctx, statusFile, fileStatus)
-		renameStatus(ctx, ingestBucket, statusFile, "error")
+		renameStatus(ctx, ingestBucket, statusFile, "done")
 		return
 	}
 
@@ -329,7 +329,7 @@ func resultWorker(ctx context.Context, wg *sync.WaitGroup, client *speech.Client
 		fileStatus.Status = StatusError
 		fileStatus.Error = err.Error()
 		writeStatus(ctx, statusFile, fileStatus)
-		renameStatus(ctx, ingestBucket, statusFile, "error")
+		renameStatus(ctx, ingestBucket, statusFile, "done")
 		return
 	}
 
@@ -345,7 +345,7 @@ func resultWorker(ctx context.Context, wg *sync.WaitGroup, client *speech.Client
 		fileStatus.Status = StatusError
 		fileStatus.Error = err.Error()
 		writeStatus(ctx, statusFile, fileStatus)
-		renameStatus(ctx, ingestBucket, statusFile, "error")
+		renameStatus(ctx, ingestBucket, statusFile, "done")
 		return
 	}
 
@@ -355,7 +355,7 @@ func resultWorker(ctx context.Context, wg *sync.WaitGroup, client *speech.Client
 		fileStatus.Status = StatusError
 		fileStatus.Error = err.Error()
 		writeStatus(ctx, statusFile, fileStatus)
-		renameStatus(ctx, ingestBucket, statusFile, "error")
+		renameStatus(ctx, ingestBucket, statusFile, "done")
 		return
 	}
 
@@ -370,7 +370,7 @@ func resultWorker(ctx context.Context, wg *sync.WaitGroup, client *speech.Client
 		fileStatus.Status = StatusError
 		fileStatus.Error = err.Error()
 		writeStatus(ctx, statusFile, fileStatus)
-		renameStatus(ctx, ingestBucket, statusFile, "error")
+		renameStatus(ctx, ingestBucket, statusFile, "done")
 		return
 	}
 
@@ -380,7 +380,7 @@ func resultWorker(ctx context.Context, wg *sync.WaitGroup, client *speech.Client
 		fileStatus.Status = StatusError
 		fileStatus.Error = err.Error()
 		writeStatus(ctx, statusFile, fileStatus)
-		renameStatus(ctx, ingestBucket, statusFile, "error")
+		renameStatus(ctx, ingestBucket, statusFile, "done")
 		return
 	}
 
