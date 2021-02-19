@@ -28,7 +28,7 @@ import (
 const CharsPerLine = 42
 
 // CharsPerLineText limits the characters per line in the text format
-const CharsPerLineText = 100
+const CharsPerLineText = 80
 
 // DefaultFPS is used when no FPS info is provided.
 const DefaultFPS = 25
@@ -154,9 +154,6 @@ func transcriptionToPlainText(trans []*speechpb.SpeechRecognitionResult, fps int
 
 	charsPerLine := CharsPerLineText
 	if timestamps {
-		// Compensate for the timestamp length
-		charsPerLine += len(fmtDuration(1, fps))
-
 		// Inject timestamp of the 1st word for the 1st line
 		line = fmt.Sprintf("%s:", fmtDuration(trans[0].Alternatives[0].Words[0].StartTime.AsDuration(), fps))
 	}
