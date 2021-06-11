@@ -270,12 +270,6 @@ func resultWorker(ctx context.Context, wg *sync.WaitGroup, client *speech.Client
 		// Ignore non json files
 		return
 	}
-	/*
-		if err != nil {
-			sendError(w, fmt.Sprintf("Bucket(%s).Objects(): %v", ingestBucketID, err), http.StatusInternalServerError)
-			return
-		}
-	*/
 
 	statusFile := ingestBucket.Object(attrs.Name)
 	reader, err := statusFile.NewReader(ctx)
@@ -301,6 +295,11 @@ func resultWorker(ctx context.Context, wg *sync.WaitGroup, client *speech.Client
 	if fileStatus.Status == StatusCompleted {
 		// Temp bugfix for crashed files
 		fileStatus.Status = StatusProcessing
+	}
+
+	if fileStatus.Status == StatusError {
+		renameStatus(ctx, ingestBucket, statusFile, "error")
+		return
 	}
 
 	if fileStatus.JobID == "" || fileStatus.Status != StatusProcessing {
