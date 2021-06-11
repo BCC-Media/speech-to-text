@@ -165,7 +165,7 @@ func main() {
 			SourceArchiveObject:  bucketObject.Name,
 			EntryPoint:           pulumi.String("ProcessResults"),
 			TriggerHttp:          pulumi.Bool(true),
-			AvailableMemoryMb:    pulumi.Int(128),
+			AvailableMemoryMb:    pulumi.Int(512),
 			Project:              pulumi.String(gcpProjectID),
 			EnvironmentVariables: functionEnv,
 		}
