@@ -209,6 +209,9 @@ func ProcessResults(w http.ResponseWriter, r *http.Request) {
 	resultBucket := storageClient.Bucket(resultBucketID)
 	objs := ingestBucket.Objects(ctx, &storage.Query{Prefix: "status/"})
 
+	max := 10
+	current := 0
+
 	var wg sync.WaitGroup
 	for {
 		attrs, err := objs.Next()
@@ -223,6 +226,11 @@ func ProcessResults(w http.ResponseWriter, r *http.Request) {
 
 		wg.Add(1)
 		go resultWorker(ctx, &wg, client, ingestBucket, resultBucket, attrs)
+
+		current++
+		if current >= max {
+			break
+		}
 	}
 
 	wg.Wait()
