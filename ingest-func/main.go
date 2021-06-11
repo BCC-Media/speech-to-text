@@ -209,6 +209,8 @@ func ProcessResults(w http.ResponseWriter, r *http.Request) {
 	resultBucket := storageClient.Bucket(resultBucketID)
 	objs := ingestBucket.Objects(ctx, &storage.Query{Prefix: "status/"})
 
+	// Work in batches of 10.
+	// TODO: Scale this using a pubsub or something
 	max := 10
 	current := 0
 
@@ -221,6 +223,11 @@ func ProcessResults(w http.ResponseWriter, r *http.Request) {
 
 		if err != nil {
 			log.Printf("Can't read file: %+v", err)
+			continue
+		}
+
+		if !strings.HasSuffix(attrs.Name, ".json") {
+			// Ignore non json files
 			continue
 		}
 
@@ -287,6 +294,7 @@ func resultWorker(ctx context.Context, wg *sync.WaitGroup, client *speech.Client
 	err = json.Unmarshal(statusFileBytes, &fileStatus)
 	if err != nil {
 		log.Printf("Can't decode json: %+v", err)
+		renameStatus(ctx, ingestBucket, statusFile, "done")
 		return
 	}
 
