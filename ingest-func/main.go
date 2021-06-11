@@ -298,6 +298,11 @@ func resultWorker(ctx context.Context, wg *sync.WaitGroup, client *speech.Client
 		return
 	}
 
+	if fileStatus.Status == StatusCompleted {
+		// Temp bugfix for crashed files
+		fileStatus.Status = StatusProcessing
+	}
+
 	if fileStatus.JobID == "" || fileStatus.Status != StatusProcessing {
 		// Not sent to transcription yet or already handled. Take it next time
 		return
