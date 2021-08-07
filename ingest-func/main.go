@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"math"
 	"net/http"
 	"net/url"
 	"os"
@@ -93,7 +94,7 @@ func durationToFrameNumber(d time.Duration, fps int32) int64 {
 }
 
 func fmtDuration(d time.Duration, fps int32) string {
-	return fmt.Sprintf("%02.f:%02d:%02d:%02d", d.Hours(), int64(d.Minutes())%60, int64(d.Seconds())%60, durationToFrameNumber(d, fps)%int64(fps))
+	return fmt.Sprintf("%02.f:%02d:%02d:%02d", math.Floor(d.Hours()), int64(d.Minutes())%60, int64(d.Seconds())%60, durationToFrameNumber(d, fps)%int64(fps))
 }
 
 func stringToSubItem(text string, start, end time.Duration) *astisub.Item {
