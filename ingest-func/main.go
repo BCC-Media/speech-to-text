@@ -67,6 +67,8 @@ type FileStatus struct {
 	JSONFile   string `json:"json_file"`
 }
 
+const transcriptionEmptyText = "Transcription empty"
+
 func sendError(w http.ResponseWriter, message string, status int) {
 	http.Error(w, message, status)
 	log.Print(message)
@@ -118,6 +120,7 @@ func transcriptionToSrt(trans []*speechpb.SpeechRecognitionResult) *astisub.Subt
 	subs := astisub.NewSubtitles()
 
 	if len(trans) == 0 {
+		subs.Items = append(subs.Items, stringToSubItem(transcriptionEmptyText, 0, 60))
 		return subs
 	}
 
@@ -147,7 +150,7 @@ func transcriptionToSrt(trans []*speechpb.SpeechRecognitionResult) *astisub.Subt
 
 func transcriptionToPlainText(trans []*speechpb.SpeechRecognitionResult, fps int32, timestamps bool) string {
 	if len(trans) == 0 {
-		return ""
+		return fmt.Sprintf("00:00:00.00 %s", transcriptionEmptyText)
 	}
 
 	lines := ""
