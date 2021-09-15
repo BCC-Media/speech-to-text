@@ -496,6 +496,13 @@ func Ingest(w http.ResponseWriter, r *http.Request) {
 			SpeechContexts:             []*speechpb.SpeechContext{},
 			EnableAutomaticPunctuation: true,
 			EnableWordTimeOffsets:      true,
+			Model:                      "video",
+			Metadata: &speechpb.RecognitionMetadata{
+				InteractionType:     speechpb.RecognitionMetadata_PRESENTATION,
+				MicrophoneDistance:  speechpb.RecognitionMetadata_MIDFIELD,
+				OriginalMediaType:   speechpb.RecognitionMetadata_AUDIO,
+				RecordingDeviceType: speechpb.RecognitionMetadata_OTHER_INDOOR_DEVICE,
+			},
 		},
 		Audio: &speechpb.RecognitionAudio{
 			AudioSource: &speechpb.RecognitionAudio_Uri{Uri: reqData.File},
