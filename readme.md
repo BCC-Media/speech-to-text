@@ -1,5 +1,9 @@
 ![BCC.Media logo](https://storage.googleapis.com/bcc-media-public/bcc-media-logo-150.png)
 
+# Archived
+
+This project is still fully functional but has been replaced with other systems and is no longer in use or maintained.
+
 # Speech To Text
 
 This is a simple set of two functions that submit an audio file for transcription
